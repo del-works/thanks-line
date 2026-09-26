@@ -129,7 +129,17 @@
   }
   .mode button + button { border-left: 1.5px solid var(--line); }
   .mode button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
-  .rule { margin: 0; font-size: 13px; background: var(--bg); border-radius: 10px; padding: 10px 12px; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--ink); cursor: pointer; }
+  .check input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
+  .guide {
+    display: grid; gap: 10px; font-size: 13px; line-height: 1.6;
+    background: var(--bg); border-radius: 10px; padding: 12px 14px;
+  }
+  .guide h3 { margin: 0 0 2px; font-size: 13px; }
+  .guide ul { margin: 0; padding-left: 1.2em; display: grid; gap: 2px; }
+  .guide p { margin: 0; }
+  .guide-rule { font-weight: 700; color: var(--accent); }
+  .guide-note { color: var(--muted); margin-top: 4px !important; }
 
   .store-bar {
     display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
@@ -242,7 +252,27 @@
           <button type="button" id="rp-thanks" data-value="thanks" aria-pressed="true"><b>お礼・あいさつ</b><span>ここで終わる</span></button>
           <button type="button" id="rp-consult" data-value="consult" aria-pressed="false"><b>相談・質問</b><span>電話へ案内</span></button>
         </div>
-        <p class="rule">LINEのやり取りは1往復まで。相談や質問の内容が来たら、お電話へご案内します。</p>
+        <label class="check" for="reply-sig" id="reply-sig-row">
+          <input type="checkbox" id="reply-sig"> 署名を付ける
+        </label>
+        <div class="guide">
+          <p class="guide-rule">LINEのやり取りは1往復まで。相談や質問の内容が来たら、お電話へご案内します。</p>
+          <div>
+            <h3>どちらを選ぶ？</h3>
+            <ul>
+              <li>「ありがとう」「また行きます」などのあいさつ → <b>お礼・あいさつ</b></li>
+              <li>質問・相談・「これも売れますか？」など → <b>相談・質問</b>（署名付きで電話へ案内）</li>
+            </ul>
+          </div>
+          <div>
+            <h3>「お礼・あいさつ」で署名を付けるとよいとき</h3>
+            <ul>
+              <li>お礼LINEを送ってから日数がたっていて、上の署名が見えにくい</li>
+              <li>「また行きます」「また相談したい」など、次につながる言葉がある</li>
+            </ul>
+            <p class="guide-note">それ以外は署名なしの短い返事で、自然にやり取りを終えましょう。</p>
+          </div>
+        </div>
       </div>
 
       <div class="step thanks-only">
@@ -437,7 +467,7 @@
     if (name) parts.push(name.replace(/(様|さん)$/, "") + "様");
     if (state.mode === "reply") {
       parts.push(REPLY[state.reply]);
-      if (state.reply === "consult") parts.push(signature());
+      if (state.reply === "consult" || $("reply-sig").checked) parts.push(signature());
       return parts.join("\n\n");
     }
     var opening = OPENING[state.visit];
@@ -455,6 +485,8 @@
     document.querySelectorAll(".thanks-only").forEach(function (el) { el.hidden = isReply; });
     document.querySelectorAll(".reply-only").forEach(function (el) { el.hidden = !isReply; });
     $("name-step-no").textContent = isReply ? "2" : "3";
+    // 「相談・質問」は必ず署名付きなので、チェック欄は「お礼・あいさつ」のときだけ出す
+    $("reply-sig-row").hidden = state.reply !== "thanks";
   }
 
   function renderChips() {
@@ -509,7 +541,7 @@
         state[key] = btn.dataset.value;
         buttons.forEach(function (b) { b.setAttribute("aria-pressed", String(b === btn)); });
         if (key === "result") renderChips();
-        if (key === "mode") applyMode();
+        if (key === "mode" || key === "reply") applyMode();
         update();
       });
     });
@@ -525,6 +557,7 @@
   bindSeg("seg-result", "result");
   bindSeg("seg-visit", "visit");
   [customer, hitokoto, staff].forEach(function (el) { el.addEventListener("input", update); });
+  $("reply-sig").addEventListener("change", update);
   store.addEventListener("change", function () {
     storeDate = store.value ? today() : null;
     try { localStorage.setItem(STORE_KEY, JSON.stringify({ store: store.value, date: storeDate })); } catch (e) {}
@@ -571,6 +604,8 @@
     customer.value = ""; hitokoto.value = ""; staff.value = "";
     state.result = "seiritsu"; state.visit = "1"; state.reply = "thanks";
     select("seg-result", "seiritsu"); select("seg-visit", "1"); select("seg-reply", "thanks");
+    $("reply-sig").checked = false;
+    applyMode();
     renderChips();
     rebuild();
     window.scrollTo({ top: 0, behavior: "smooth" });
