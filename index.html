@@ -118,7 +118,21 @@
   .seg button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   .seg button[aria-pressed="true"] span { color: var(--on-accent); opacity: .85; }
 
+  .seg.seg-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mode {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    border: 1.5px solid var(--line); border-radius: 10px; overflow: hidden;
+  }
+  .mode button {
+    font: inherit; font-weight: 700; min-height: 46px; cursor: pointer;
+    border: none; background: var(--surface); color: var(--muted);
+  }
+  .mode button + button { border-left: 1.5px solid var(--line); }
+  .mode button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+  .rule { margin: 0; font-size: 13px; background: var(--bg); border-radius: 10px; padding: 10px 12px; }
+
   .fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .fields .full { grid-column: 1 / -1; }
   label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   input[type="text"], textarea {
     font: inherit; color: var(--ink); background: var(--surface);
@@ -198,7 +212,21 @@
 
   <div class="layout">
     <section class="panel" aria-label="入力">
-      <div class="step">
+      <div class="mode" id="seg-mode" role="group" aria-label="作る文面">
+        <button type="button" id="m-thanks" data-value="thanks" aria-pressed="true">お礼を送る</button>
+        <button type="button" id="m-reply" data-value="reply" aria-pressed="false">返信が来たとき</button>
+      </div>
+
+      <div class="step reply-only" hidden>
+        <div class="step-head"><span class="step-no">1</span>お客様からの返信</div>
+        <div class="seg seg-2" id="seg-reply" role="group" aria-label="お客様からの返信">
+          <button type="button" id="rp-thanks" data-value="thanks" aria-pressed="true"><b>お礼・あいさつ</b><span>ここで終わる</span></button>
+          <button type="button" id="rp-consult" data-value="consult" aria-pressed="false"><b>相談・質問</b><span>電話へ案内</span></button>
+        </div>
+        <p class="rule">LINEのやり取りは1往復まで。相談や質問の内容が来たら、お電話へご案内します。</p>
+      </div>
+
+      <div class="step thanks-only">
         <div class="step-head"><span class="step-no">1</span>今日の結果</div>
         <div class="seg" id="seg-result" role="group" aria-label="今日の結果">
           <button type="button" id="r-seiritsu" data-value="seiritsu" aria-pressed="true"><b>成立</b><span>買取できた</span></button>
@@ -207,7 +235,7 @@
         </div>
       </div>
 
-      <div class="step">
+      <div class="step thanks-only">
         <div class="step-head"><span class="step-no">2</span>来店回数</div>
         <div class="seg" id="seg-visit" role="group" aria-label="来店回数">
           <button type="button" id="v-1" data-value="1" aria-pressed="true"><b>1回目</b><span>はじめて</span></button>
@@ -217,18 +245,21 @@
       </div>
 
       <div class="step">
-        <div class="step-head"><span class="step-no">3</span>名前 <small>空欄なら入りません</small></div>
+        <div class="step-head"><span class="step-no" id="name-step-no">3</span>名前 <small>空欄なら入りません</small></div>
         <div class="fields">
-          <label for="customer">お客様のお名前
-            <input type="text" id="customer" placeholder="例：山田" autocomplete="off">
+          <label for="store">店舗名（次回も残ります）
+            <input type="text" id="store" placeholder="例：本店" autocomplete="off">
           </label>
-          <label for="staff">担当者名（次回も残ります）
+          <label for="staff">担当者名（査定した本人が送るときだけ）
             <input type="text" id="staff" placeholder="例：佐藤" autocomplete="off">
+          </label>
+          <label for="customer" class="full">お客様のお名前
+            <input type="text" id="customer" placeholder="例：山田" autocomplete="off">
           </label>
         </div>
       </div>
 
-      <div class="step">
+      <div class="step thanks-only">
         <div class="step-head"><span class="step-no">4</span>その方だけの一言 <small>接客中の話題を1文だけ</small></div>
         <textarea id="hitokoto" placeholder="例：お話されていた北海道旅行、楽しんできてくださいね！"></textarea>
         <div class="chips" id="chips"></div>
@@ -272,11 +303,25 @@
 <script>
 (function () {
   // ===== テンプレート（ここを書き換えれば全員の文面が変わります） =====
-  // {staff} は担当者名に置き換わります
+  // 署名（文面の最後に入ります）
+  var SHOP = "買取専門店 諭吉";
+  var TEL = "0120-504-212";
+  var HOURS = "10:00～19:00";
+
+  // 書き出し：withStaff は担当者名を入れたとき、plain は空欄のとき。{staff} は担当者名に置き換わります
   var OPENING = {
-    1: "本日はご来店いただき、ありがとうございました！\n担当させていただいた{staff}です😊",
-    2: "本日もご来店いただき、ありがとうございました！\nまたお越しいただけて、とても嬉しかったです😊\n担当の{staff}です。",
-    3: "いつもご利用いただき、ありがとうございます！\n今回も担当させていただき、ありがとうございました😊\n{staff}です。"
+    1: {
+      withStaff: "本日はご来店いただき、ありがとうございました！\n担当させていただいた{staff}です😊",
+      plain: "本日はご来店いただき、ありがとうございました😊"
+    },
+    2: {
+      withStaff: "本日もご来店いただき、ありがとうございました！\nまたお越しいただけて、とても嬉しかったです😊\n担当の{staff}です。",
+      plain: "本日もご来店いただき、ありがとうございました！\nまたお越しいただけて、とても嬉しかったです😊"
+    },
+    3: {
+      withStaff: "いつもご利用いただき、ありがとうございます！\n今回も担当させていただき、ありがとうございました😊\n{staff}です。",
+      plain: "いつもご利用いただき、ありがとうございます！\n今回もご来店いただき、ありがとうございました😊"
+    }
   };
   var RESULT = {
     seiritsu: "大切なお品物をお任せいただき、ありがとうございました。",
@@ -284,9 +329,14 @@
     toiawase: "本日はお品物をお持ちいただき、ありがとうございました。\n今回しっかり確認できたことで、お品物の整理やお片付けの進め方も決めやすくなったかと思います。\n\nほかにも「これはどうだろう？」と気になるお品物があれば、いつでもお気軽にお持ちください！"
   };
   var CLOSING = {
-    1: "「これって売れるのかな？」くらいでも大丈夫ですので、お気軽にこちらのLINEにご連絡ください！\nまたお会いできるのを楽しみにしております！",
-    2: "また何かございましたら、査定だけでも大丈夫ですので、いつでもお気軽にご相談ください！\nまたお会いできるのを楽しみにしております！",
-    3: "「これってどうなんだろう？」というご相談だけでも大歓迎です。\n今後ともよろしくお願いいたします！"
+    1: "気になるお品物がございましたら、「これって売れるのかな？」くらいでも大丈夫ですので、お気軽にお電話ください！\nまたお会いできるのを楽しみにしております！",
+    2: "また何かございましたら、査定だけでも大丈夫ですので、いつでもお気軽にお電話ください！\nまたお会いできるのを楽しみにしております！",
+    3: "「これってどうなんだろう？」というご相談も、お電話でいつでもお受けしております。\n今後ともよろしくお願いいたします！"
+  };
+  // お客様から返信が来たとき
+  var REPLY = {
+    thanks: "ご返信ありがとうございます！\nまたお会いできるのを楽しみにしております😊",
+    consult: "ご連絡ありがとうございます！\n詳しくお伺いしたいので、お手数ですが下記までお電話いただけますでしょうか。\nお電話の際に「LINEを見た」とお伝えいただけるとスムーズです😊"
   };
   var CHIPS_COMMON = [
     "〇〇のお話、とても楽しかったです！",
@@ -315,23 +365,44 @@
   }
   // ==================================================================
 
-  var state = { result: "seiritsu", visit: "1", edited: false, lastBuilt: "" };
+  var state = { mode: "thanks", reply: "thanks", result: "seiritsu", visit: "1", edited: false, lastBuilt: "" };
   var $ = function (id) { return document.getElementById(id); };
-  var msg = $("message"), hitokoto = $("hitokoto"), customer = $("customer"), staff = $("staff");
+  var msg = $("message"), hitokoto = $("hitokoto"), customer = $("customer"), staff = $("staff"), store = $("store");
 
-  try { staff.value = localStorage.getItem("thanks-line-staff") || ""; } catch (e) {}
+  try { store.value = localStorage.getItem("thanks-line-store") || ""; } catch (e) {}
+
+  function signature() {
+    var lines = ["――――――――", SHOP + (store.value.trim() ? " " + store.value.trim() : "")];
+    if (staff.value.trim()) lines.push("担当：" + staff.value.trim());
+    lines.push("お問い合わせ・ご相談はお電話で", "📞 " + TEL, "（受付時間 " + HOURS + "）");
+    return lines.join("\n");
+  }
 
   function build() {
-    var staffName = staff.value.trim() || "〇〇";
+    var staffName = staff.value.trim();
     var parts = [];
     var name = customer.value.trim();
     if (name) parts.push(name.replace(/(様|さん)$/, "") + "様");
-    parts.push(OPENING[state.visit].replace("{staff}", staffName));
+    if (state.mode === "reply") {
+      parts.push(REPLY[state.reply]);
+      if (state.reply === "consult") parts.push(signature());
+      return parts.join("\n\n");
+    }
+    var opening = OPENING[state.visit];
+    parts.push(staffName ? opening.withStaff.replace("{staff}", staffName) : opening.plain);
     parts.push(RESULT[state.result]);
     var h = hitokoto.value.trim();
     if (h) parts.push(h);
     parts.push(CLOSING[state.visit]);
+    parts.push(signature());
     return parts.join("\n\n");
+  }
+
+  function applyMode() {
+    var isReply = state.mode === "reply";
+    document.querySelectorAll(".thanks-only").forEach(function (el) { el.hidden = isReply; });
+    document.querySelectorAll(".reply-only").forEach(function (el) { el.hidden = !isReply; });
+    $("name-step-no").textContent = isReply ? "2" : "3";
   }
 
   function renderChips() {
@@ -384,6 +455,7 @@
         state[key] = btn.dataset.value;
         buttons.forEach(function (b) { b.setAttribute("aria-pressed", String(b === btn)); });
         if (key === "result") renderChips();
+        if (key === "mode") applyMode();
         update();
       });
     });
@@ -394,11 +466,13 @@
     });
   }
 
+  bindSeg("seg-mode", "mode");
+  bindSeg("seg-reply", "reply");
   bindSeg("seg-result", "result");
   bindSeg("seg-visit", "visit");
-  [customer, hitokoto].forEach(function (el) { el.addEventListener("input", update); });
-  staff.addEventListener("input", function () {
-    try { localStorage.setItem("thanks-line-staff", staff.value.trim()); } catch (e) {}
+  [customer, hitokoto, staff].forEach(function (el) { el.addEventListener("input", update); });
+  store.addEventListener("input", function () {
+    try { localStorage.setItem("thanks-line-store", store.value.trim()); } catch (e) {}
     update();
   });
   msg.addEventListener("input", function () {
@@ -432,9 +506,9 @@
   });
 
   $("next").addEventListener("click", function () {
-    customer.value = ""; hitokoto.value = "";
-    state.result = "seiritsu"; state.visit = "1";
-    select("seg-result", "seiritsu"); select("seg-visit", "1");
+    customer.value = ""; hitokoto.value = ""; staff.value = "";
+    state.result = "seiritsu"; state.visit = "1"; state.reply = "thanks";
+    select("seg-result", "seiritsu"); select("seg-visit", "1"); select("seg-reply", "thanks");
     renderChips();
     rebuild();
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -442,6 +516,7 @@
   });
 
   renderChips();
+  applyMode();
   update();
 })();
 </script>
