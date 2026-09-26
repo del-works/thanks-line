@@ -131,8 +131,20 @@
   .mode button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
   .rule { margin: 0; font-size: 13px; background: var(--bg); border-radius: 10px; padding: 10px 12px; }
 
+  .store-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+    background: var(--accent-soft); border-radius: 10px; padding: 10px 12px;
+  }
+  .store-bar label { font-weight: 700; color: var(--accent); font-size: 15px; }
+  .store-bar select {
+    font: inherit; flex: 1 1 200px; min-width: 0; min-height: 44px;
+    padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 8px;
+    background: var(--surface); color: var(--ink);
+  }
+  .store-bar.missing { background: var(--warn-soft); }
+  .store-bar.missing label { color: var(--warn); }
+
   .fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .fields .full { grid-column: 1 / -1; }
   label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   input[type="text"], textarea {
     font: inherit; color: var(--ink); background: var(--surface);
@@ -212,6 +224,13 @@
 
   <div class="layout">
     <section class="panel" aria-label="入力">
+      <div class="store-bar" id="store-bar">
+        <label for="store">本日の店舗</label>
+        <select id="store" autocomplete="off">
+          <option value="">店舗を選んでください</option>
+        </select>
+      </div>
+
       <div class="mode" id="seg-mode" role="group" aria-label="作る文面">
         <button type="button" id="m-thanks" data-value="thanks" aria-pressed="true">お礼を送る</button>
         <button type="button" id="m-reply" data-value="reply" aria-pressed="false">返信が来たとき</button>
@@ -247,13 +266,10 @@
       <div class="step">
         <div class="step-head"><span class="step-no" id="name-step-no">3</span>名前 <small>空欄なら入りません</small></div>
         <div class="fields">
-          <label for="store">店舗名（次回も残ります）
-            <input type="text" id="store" placeholder="例：本店" autocomplete="off">
-          </label>
           <label for="staff">担当者名（査定した本人が送るときだけ）
             <input type="text" id="staff" placeholder="例：佐藤" autocomplete="off">
           </label>
-          <label for="customer" class="full">お客様のお名前
+          <label for="customer">お客様のお名前
             <input type="text" id="customer" placeholder="例：山田" autocomplete="off">
           </label>
         </div>
@@ -285,6 +301,10 @@
           <span id="count">0文字</span>
         </div>
 
+        <div class="notice" id="store-warn" hidden>
+          <span>本日の店舗が選ばれていません。画面上の「本日の店舗」から選んでください。</span>
+        </div>
+
         <div class="notice" id="placeholder-warn" hidden>
           <span>「〇〇」が残っています。書き換えてから送りましょう。</span>
         </div>
@@ -307,6 +327,13 @@
   var SHOP = "買取専門店 諭吉";
   var TEL = "0120-504-212";
   var HOURS = "10:00～19:00";
+  // 店舗一覧（店舗が増えたらここに1行追加）。署名に書く表記そのままで入れます
+  var STORES = [
+    "エレナ伊万里店",
+    "スーパーモリナガ白石店",
+    "HIヒロセ スーパーコンボ多久店",
+    "佐賀本庄店"
+  ];
 
   // 書き出し：withStaff は担当者名を入れたとき、plain は空欄のとき。{staff} は担当者名に置き換わります
   var OPENING = {
@@ -369,7 +396,32 @@
   var $ = function (id) { return document.getElementById(id); };
   var msg = $("message"), hitokoto = $("hitokoto"), customer = $("customer"), staff = $("staff"), store = $("store");
 
-  try { store.value = localStorage.getItem("thanks-line-store") || ""; } catch (e) {}
+  // 店舗はその日のうちだけ覚える（日付が変わったら選び直し）
+  var STORE_KEY = "thanks-line-store-today";
+  var storeDate = null;
+  function today() {
+    var d = new Date();
+    return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+  }
+  STORES.forEach(function (name) {
+    var o = document.createElement("option");
+    o.value = name; o.textContent = name;
+    store.appendChild(o);
+  });
+  // ブラウザが前回の選択を勝手に復元しないよう、保存した日付と合うときだけ店舗を入れる
+  store.value = "";
+  try {
+    var saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
+    if (saved && saved.date === today() && STORES.indexOf(saved.store) >= 0) {
+      store.value = saved.store; storeDate = saved.date;
+    }
+  } catch (e) {}
+  function checkDay() {
+    if (storeDate && storeDate !== today()) {
+      store.value = ""; storeDate = null;
+      update();
+    }
+  }
 
   function signature() {
     var lines = ["――――――――", SHOP + (store.value.trim() ? " " + store.value.trim() : "")];
@@ -426,6 +478,8 @@
   function refreshMeta() {
     $("count").textContent = msg.value.length + "文字";
     $("placeholder-warn").hidden = msg.value.indexOf("〇〇") < 0;
+    $("store-warn").hidden = !!store.value;
+    $("store-bar").classList.toggle("missing", !store.value);
     var tag = $("state-tag");
     tag.textContent = state.edited ? "手直し中" : "たたき台";
     tag.classList.toggle("edited", state.edited);
@@ -471,10 +525,12 @@
   bindSeg("seg-result", "result");
   bindSeg("seg-visit", "visit");
   [customer, hitokoto, staff].forEach(function (el) { el.addEventListener("input", update); });
-  store.addEventListener("input", function () {
-    try { localStorage.setItem("thanks-line-store", store.value.trim()); } catch (e) {}
+  store.addEventListener("change", function () {
+    storeDate = store.value ? today() : null;
+    try { localStorage.setItem(STORE_KEY, JSON.stringify({ store: store.value, date: storeDate })); } catch (e) {}
     update();
   });
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) checkDay(); });
   msg.addEventListener("input", function () {
     if (!state.edited) { state.edited = true; }
     refreshMeta();
@@ -491,6 +547,12 @@
   }
 
   $("copy").addEventListener("click", function () {
+    checkDay();
+    if (!store.value) {
+      store.focus();
+      toast("本日の店舗を選んでからコピーしてください");
+      return;
+    }
     var text = msg.value;
     var fallback = function () {
       msg.focus(); msg.select();
